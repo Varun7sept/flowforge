@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: flowforge-api
+    name: flowforge-739m
     runtime: go
     buildCommand: go build -o flowforge .
     startCommand: ./flowforge
@@ -19,7 +19,7 @@ services:
     staticPublishPath: frontend/dist
     envVars:
       - key: VITE_API_URL
-        value: https://flowforge-api.onrender.com
+        value: https://flowforge-739m.onrender.com
 
 databases:
   - name: flowforge-db
