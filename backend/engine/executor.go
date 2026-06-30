@@ -80,11 +80,15 @@ func (e *Executor) Run(ctx context.Context, execution models.Execution, steps []
 			wg.Add(1)
 			go func(step models.Step) {
 				defer wg.Done()
-				se := stepExecs[step.ID]
-				success := e.runStep(ctx, execution.ID, &se)
-				stepExecs[step.ID] = se
 
 				mu.Lock()
+				se := stepExecs[step.ID]
+				mu.Unlock()
+
+				success := e.runStep(ctx, execution.ID, &se)
+
+				mu.Lock()
+				stepExecs[step.ID] = se
 				if success {
 					completed[step.Name] = true
 				} else {
