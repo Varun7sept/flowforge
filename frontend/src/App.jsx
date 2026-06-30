@@ -2,6 +2,7 @@ import { useState } from 'react'
 import WorkflowList from './components/WorkflowList'
 import WorkflowEditor from './components/WorkflowEditor'
 import ExecutionView from './components/ExecutionView'
+import RepoAnalyzer from './components/RepoAnalyzer'
 import './App.css'
 
 export default function App() {
@@ -31,6 +32,9 @@ export default function App() {
           <button className={view === 'list' ? 'nav-btn active' : 'nav-btn'} onClick={() => setView('list')}>
             Workflows
           </button>
+          <button className={view === 'repo' ? 'nav-btn active' : 'nav-btn'} onClick={() => setView('repo')}>
+            🔍 Repo Analyzer
+          </button>
           {selectedWorkflow && (
             <button className={view === 'editor' ? 'nav-btn active' : 'nav-btn'} onClick={() => setView('editor')}>
               {selectedWorkflow.name}
@@ -48,6 +52,9 @@ export default function App() {
         )}
         {view === 'execution' && (
           <ExecutionView execution={selectedExecution} workflow={selectedWorkflow} onBack={() => setView('editor')} />
+        )}
+        {view === 'repo' && (
+          <RepoAnalyzer onBack={() => setView('list')} />
         )}
       </main>
     </div>

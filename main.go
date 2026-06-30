@@ -42,6 +42,7 @@ func main() {
 	// AI endpoints
 	r.Post("/ai/generate-steps", h.AIGenerateSteps)
 	r.Post("/ai/analyze-failure", h.AIAnalyzeFailure)
+	r.Post("/ai/analyze-repo", h.AIAnalyzeRepo)
 
 	port := os.Getenv("PORT")
 	if port == "" {

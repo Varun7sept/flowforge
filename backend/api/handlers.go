@@ -244,6 +244,29 @@ func (h *Handler) AIGenerateSteps(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+// POST /ai/analyze-repo
+// Body: {"github_url": "https://github.com/owner/repo"}
+func (h *Handler) AIAnalyzeRepo(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		GithubURL string `json:"github_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GithubURL == "" {
+		http.Error(w, "github_url is required", http.StatusBadRequest)
+		return
+	}
+
+	result, repoName, err := ai.AnalyzeRepo(req.GithubURL)
+	if err != nil {
+		http.Error(w, "AI error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"steps":     result.Steps,
+		"repo_name": repoName,
+	})
+}
+
 // POST /ai/analyze-failure
 // Body: {"step_name": "Load to DB", "log": "..."}
 func (h *Handler) AIAnalyzeFailure(w http.ResponseWriter, r *http.Request) {
