@@ -143,7 +143,11 @@ export default function WorkflowEditor({ workflow, onExecute, onBack }) {
 
   function addStep() {
     if (!newStepName.trim()) return
-    const deps = newStepDeps ? newStepDeps.split(',').map(d => d.trim()).filter(Boolean) : []
+    // if user didn't specify deps, auto-depend on the last step
+    let deps = newStepDeps ? newStepDeps.split(',').map(d => d.trim()).filter(Boolean) : []
+    if (deps.length === 0 && steps.length > 0) {
+      deps = [steps[steps.length - 1].name]
+    }
     setSteps(prev => [...prev, { name: newStepName.trim(), depends_on: deps, position_x: 100 + prev.length * 200, position_y: 150 }])
     setNewStepName('')
     setNewStepDeps('')
