@@ -15,7 +15,7 @@ func Connect() (*sql.DB, error) {
 			getEnv("DB_HOST", "localhost"),
 			getEnv("DB_PORT", "5432"),
 			getEnv("DB_USER", "postgres"),
-			getEnv("DB_PASSWORD", "postgres"),
+			os.Getenv("DB_PASSWORD"), // never hardcode — must be set via env
 			getEnv("DB_NAME", "flowforge"),
 		)
 	}
