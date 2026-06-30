@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"github.com/varun/flowforge/backend/ai"
 	"github.com/varun/flowforge/backend/engine"
 	"github.com/varun/flowforge/backend/models"
@@ -62,7 +62,7 @@ func (h *Handler) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 		_, err := h.db.Exec(`INSERT INTO steps (id, workflow_id, name, depends_on, position_x, position_y) VALUES ($1,$2,$3,$4,$5,$6)`,
 			req.Steps[i].ID, wf.ID, req.Steps[i].Name,
-			pq.Array(req.Steps[i].DependsOn),
+			req.Steps[i].DependsOn,
 			req.Steps[i].PositionX, req.Steps[i].PositionY)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -151,7 +151,7 @@ func (h *Handler) RunWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	h.db.Exec(`INSERT INTO executions (id, workflow_id, status) VALUES ($1, $2, $3)`, exec.ID, exec.WorkflowID, exec.Status)
 
-	go h.executor.Run(r.Context(), exec, steps)
+	go h.executor.Run(context.Background(), exec, steps)
 
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(exec)
