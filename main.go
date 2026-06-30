@@ -23,6 +23,9 @@ func main() {
 		log.Fatal("db ping failed:", err)
 	}
 
+	// auto-create tables if they don't exist
+	db.RunMigrations(database)
+
 	hub := ws.NewHub()
 	h := api.NewHandler(database, hub)
 
