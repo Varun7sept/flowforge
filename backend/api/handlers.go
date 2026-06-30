@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -51,7 +52,8 @@ func (h *Handler) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	_, err := h.db.Exec(`INSERT INTO workflows (id, name, description) VALUES ($1, $2, $3)`,
 		wf.ID, wf.Name, wf.Description)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("ERROR CreateWorkflow insert workflow: %v", err)
+		http.Error(w, "create workflow failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -60,12 +62,17 @@ func (h *Handler) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		if req.Steps[i].ID == uuid.Nil {
 			req.Steps[i].ID = uuid.New()
 		}
+		deps := []string(req.Steps[i].DependsOn)
+		if deps == nil {
+			deps = []string{}
+		}
 		_, err := h.db.Exec(`INSERT INTO steps (id, workflow_id, name, depends_on, position_x, position_y) VALUES ($1,$2,$3,$4,$5,$6)`,
 			req.Steps[i].ID, wf.ID, req.Steps[i].Name,
-			req.Steps[i].DependsOn,
+			"{"+joinStrings(deps)+"}",
 			req.Steps[i].PositionX, req.Steps[i].PositionY)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("ERROR CreateWorkflow insert step %q deps=%v: %v", req.Steps[i].Name, deps, err)
+			http.Error(w, "create step failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
@@ -302,4 +309,23 @@ func (h *Handler) AIAnalyzeFailure(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(result)
+}
+
+// joinStrings builds a PostgreSQL TEXT[] literal from a []string
+func joinStrings(ss []string) string {
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += ","
+		}
+		escaped := ""
+		for _, c := range s {
+			if c == '"' || c == '\\' {
+				escaped += "\\"
+			}
+			escaped += string(c)
+		}
+		result += `"` + escaped + `"`
+	}
+	return result
 }
