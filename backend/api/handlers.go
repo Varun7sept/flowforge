@@ -59,9 +59,7 @@ func (h *Handler) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	for i := range req.Steps {
 		req.Steps[i].WorkflowID = wf.ID
-		if req.Steps[i].ID == uuid.Nil {
-			req.Steps[i].ID = uuid.New()
-		}
+		req.Steps[i].ID = uuid.New() // always new — CreateWorkflow makes a fresh workflow
 		deps := []string(req.Steps[i].DependsOn)
 		if deps == nil {
 			deps = []string{}
