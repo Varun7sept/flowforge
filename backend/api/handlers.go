@@ -267,6 +267,22 @@ func (h *Handler) AIAnalyzeRepo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DELETE /workflows/{id}
+func (h *Handler) DeleteWorkflow(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	res, err := h.db.Exec(`DELETE FROM workflows WHERE id=$1`, id)
+	if err != nil {
+		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		http.Error(w, "workflow not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // POST /ai/analyze-failure
 // Body: {"step_name": "Load to DB", "log": "..."}
 func (h *Handler) AIAnalyzeFailure(w http.ResponseWriter, r *http.Request) {

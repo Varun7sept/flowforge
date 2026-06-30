@@ -37,6 +37,7 @@ func main() {
 	r.Post("/workflows", h.CreateWorkflow)
 	r.Get("/workflows", h.ListWorkflows)
 	r.Get("/workflows/{id}", h.GetWorkflow)
+	r.Delete("/workflows/{id}", h.DeleteWorkflow)
 	r.Post("/workflows/{id}/run", h.RunWorkflow)
 	r.Get("/workflows/{id}/executions", h.ListExecutions)
 	r.Get("/executions/{id}", h.GetExecution)

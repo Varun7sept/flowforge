@@ -13,6 +13,17 @@ export default function WorkflowList({ onOpen, onNewWorkflow }) {
       .finally(() => setLoading(false))
   }, [])
 
+  async function deleteWorkflow(e, id) {
+    e.stopPropagation()
+    if (!confirm('Delete this workflow? This cannot be undone.')) return
+    try {
+      await axios.delete(`${API}/workflows/${id}`)
+      setWorkflows(prev => prev.filter(w => w.id !== id))
+    } catch (err) {
+      alert('Delete failed: ' + err.message)
+    }
+  }
+
   if (loading) return <div className="empty-state"><h2>Loading...</h2></div>
 
   return (
@@ -39,6 +50,13 @@ export default function WorkflowList({ onOpen, onNewWorkflow }) {
               <div className="card-actions">
                 <button className="btn-primary" onClick={e => { e.stopPropagation(); onOpen(wf) }}>
                   Open
+                </button>
+                <button
+                  className="btn-secondary"
+                  style={{ color: '#f87171', borderColor: '#7f1d1d' }}
+                  onClick={e => deleteWorkflow(e, wf.id)}
+                >
+                  🗑 Delete
                 </button>
               </div>
             </div>
