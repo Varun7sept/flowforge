@@ -103,6 +103,20 @@ export default function WorkflowEditor({ workflow, onExecute, onBack }) {
   const [saving, setSaving] = useState(false)
   const [savedWorkflow, setSavedWorkflow] = useState(workflow || null)
   const [running, setRunning] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+
+  // fetch full workflow with steps when opening an existing one
+  useEffect(() => {
+    if (workflow?.id) {
+      axios.get(`${API}/workflows/${workflow.id}`).then(r => {
+        setName(r.data.name)
+        setDescription(r.data.description || '')
+        setSteps(r.data.steps || [])
+        setSavedWorkflow(r.data)
+      })
+    }
+  }, [workflow?.id])
 
   useEffect(() => {
     if (steps.length > 0) {
@@ -141,6 +155,27 @@ export default function WorkflowEditor({ workflow, onExecute, onBack }) {
     setSavedWorkflow(null)
   }
 
+  async function generateWithAI() {
+    if (!aiPrompt.trim()) return
+    setAiLoading(true)
+    try {
+      const res = await axios.post(`${API}/ai/generate-steps`, { description: aiPrompt })
+      const generated = res.data.steps.map((s, i) => ({
+        name: s.name,
+        depends_on: s.depends_on || [],
+        position_x: 80 + i * 200,
+        position_y: s.depends_on?.length > 0 ? (i % 2 === 0 ? 100 : 260) : 180,
+      }))
+      setSteps(generated)
+      if (!name) setName(aiPrompt.slice(0, 40))
+      setSavedWorkflow(null)
+    } catch (e) {
+      alert('AI error: ' + e.message)
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   async function save() {
     if (!name.trim()) return alert('Please enter a workflow name')
     if (steps.length === 0) return alert('Add at least one step')
@@ -158,11 +193,25 @@ export default function WorkflowEditor({ workflow, onExecute, onBack }) {
   }
 
   async function run() {
-    if (!savedWorkflow) return alert('Please save the workflow first')
+    if (steps.length === 0) return alert('Add at least one step first')
     setRunning(true)
     try {
-      const res = await axios.post(`${API}/workflows/${savedWorkflow.id}/run`)
-      onExecute(res.data, savedWorkflow)
+      // auto-save if not saved yet
+      let wf = savedWorkflow
+      if (!wf) {
+        const wfName = name.trim() || 'Untitled Workflow'
+        const payload = {
+          name: wfName,
+          description,
+          steps: steps.map(s => ({ ...s, depends_on: s.depends_on || [] })),
+        }
+        const saved = await axios.post(`${API}/workflows`, payload)
+        wf = saved.data
+        setSavedWorkflow(wf)
+        setName(wfName)
+      }
+      const res = await axios.post(`${API}/workflows/${wf.id}/run`)
+      onExecute(res.data, wf)
     } catch (e) {
       alert('Run failed: ' + e.message)
     } finally {
@@ -181,7 +230,7 @@ export default function WorkflowEditor({ workflow, onExecute, onBack }) {
           <button className="btn-secondary" onClick={save} disabled={saving}>
             {saving ? 'Saving...' : 'Save'}
           </button>
-          <button className="btn-primary" onClick={run} disabled={running || !savedWorkflow}>
+          <button className="btn-primary" onClick={run} disabled={running || steps.length === 0}>
             {running ? 'Starting...' : '▶ Run'}
           </button>
         </div>
@@ -213,6 +262,32 @@ export default function WorkflowEditor({ workflow, onExecute, onBack }) {
               <label className="form-label">Description</label>
               <input className="form-input" value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this do?" />
             </div>
+          </div>
+
+          {/* AI Step Generator */}
+          <div className="panel-card" style={{ border: '1px solid #4c1d95' }}>
+            <h3 style={{ color: '#a78bfa' }}>🤖 AI Generator</h3>
+            <p style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+              Describe your workflow in plain English
+            </p>
+            <div className="form-group">
+              <textarea
+                className="form-input"
+                rows={3}
+                value={aiPrompt}
+                onChange={e => setAiPrompt(e.target.value)}
+                placeholder="e.g. Process a new employee onboarding with background verification"
+                style={{ resize: 'none' }}
+              />
+            </div>
+            <button
+              className="btn-primary"
+              style={{ width: '100%', background: aiLoading ? '#4c1d95' : '#7c3aed' }}
+              onClick={generateWithAI}
+              disabled={aiLoading || !aiPrompt.trim()}
+            >
+              {aiLoading ? '🤖 Generating...' : '✨ Generate Steps'}
+            </button>
           </div>
 
           <div className="panel-card">

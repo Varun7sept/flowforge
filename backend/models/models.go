@@ -24,6 +24,13 @@ type Step struct {
 	PositionY  float64        `json:"position_y"`
 }
 
+func (s *Step) DependsOnSafe() []string {
+	if s.DependsOn == nil {
+		return []string{}
+	}
+	return []string(s.DependsOn)
+}
+
 type Execution struct {
 	ID         uuid.UUID      `json:"id"`
 	WorkflowID uuid.UUID      `json:"workflow_id"`

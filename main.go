@@ -39,6 +39,10 @@ func main() {
 	r.Get("/executions/{id}", h.GetExecution)
 	r.Get("/executions/{id}/ws", h.ExecutionWS)
 
+	// AI endpoints
+	r.Post("/ai/generate-steps", h.AIGenerateSteps)
+	r.Post("/ai/analyze-failure", h.AIAnalyzeFailure)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

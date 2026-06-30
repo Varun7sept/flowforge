@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS steps (
     id UUID PRIMARY KEY,
     workflow_id UUID REFERENCES workflows(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    depends_on UUID[] DEFAULT '{}',
+    depends_on TEXT[] DEFAULT '{}',
     position_x FLOAT DEFAULT 0,
     position_y FLOAT DEFAULT 0
 );

@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/varun/flowforge/backend/ai"
 	"github.com/varun/flowforge/backend/engine"
 	"github.com/varun/flowforge/backend/models"
 	"github.com/varun/flowforge/backend/ws"
@@ -112,7 +113,7 @@ func (h *Handler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	for rows.Next() {
 		var s models.Step
-		rows.Scan(&s.ID, &s.WorkflowID, &s.Name, pq.Array(&s.DependsOn), &s.PositionX, &s.PositionY)
+		rows.Scan(&s.ID, &s.WorkflowID, &s.Name, &s.DependsOn, &s.PositionX, &s.PositionY)
 		wf.Steps = append(wf.Steps, s)
 	}
 
@@ -138,7 +139,7 @@ func (h *Handler) RunWorkflow(w http.ResponseWriter, r *http.Request) {
 	var steps []models.Step
 	for rows.Next() {
 		var s models.Step
-		rows.Scan(&s.ID, &s.WorkflowID, &s.Name, pq.Array(&s.DependsOn), &s.PositionX, &s.PositionY)
+		rows.Scan(&s.ID, &s.WorkflowID, &s.Name, &s.DependsOn, &s.PositionX, &s.PositionY)
 		steps = append(steps, s)
 	}
 
@@ -221,4 +222,45 @@ func (h *Handler) ListExecutions(w http.ResponseWriter, r *http.Request) {
 		execs = append(execs, exec)
 	}
 	json.NewEncoder(w).Encode(execs)
+}
+
+// POST /ai/generate-steps
+// Body: {"description": "process a new user signup"}
+func (h *Handler) AIGenerateSteps(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Description == "" {
+		http.Error(w, "description is required", http.StatusBadRequest)
+		return
+	}
+
+	result, err := ai.GenerateSteps(req.Description)
+	if err != nil {
+		http.Error(w, "AI error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(result)
+}
+
+// POST /ai/analyze-failure
+// Body: {"step_name": "Load to DB", "log": "..."}
+func (h *Handler) AIAnalyzeFailure(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		StepName string `json:"step_name"`
+		Log      string `json:"log"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	result, err := ai.AnalyzeFailure(req.StepName, req.Log)
+	if err != nil {
+		http.Error(w, "AI error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(result)
 }

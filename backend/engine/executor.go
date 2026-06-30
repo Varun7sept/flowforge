@@ -31,14 +31,8 @@ func (e *Executor) Run(ctx context.Context, execution models.Execution, steps []
 	execution.StartedAt = &now
 	e.hub.Broadcast(execution.ID, models.WSEvent{Type: "execution_started", ExecutionID: execution.ID, Execution: &execution})
 
-	// build step map and dependency graph
-	stepMap := map[uuid.UUID]models.Step{}
-	for _, s := range steps {
-		stepMap[s.ID] = s
-	}
-
-	// track completed steps
-	completed := map[uuid.UUID]bool{}
+	// track completed steps by name
+	completed := map[string]bool{}
 	failed := false
 	var mu sync.Mutex
 
@@ -92,7 +86,7 @@ func (e *Executor) Run(ctx context.Context, execution models.Execution, steps []
 
 				mu.Lock()
 				if success {
-					completed[step.ID] = true
+					completed[step.Name] = true
 				} else {
 					failed = true
 				}
@@ -160,13 +154,9 @@ func (e *Executor) runStep(ctx context.Context, executionID uuid.UUID, se *model
 	return false
 }
 
-func allDepsCompleted(step models.Step, completed map[uuid.UUID]bool) bool {
-	for _, depStr := range step.DependsOn {
-		depID, err := uuid.Parse(depStr)
-		if err != nil {
-			continue
-		}
-		if !completed[depID] {
+func allDepsCompleted(step models.Step, completed map[string]bool) bool {
+	for _, dep := range step.DependsOn {
+		if !completed[dep] {
 			return false
 		}
 	}

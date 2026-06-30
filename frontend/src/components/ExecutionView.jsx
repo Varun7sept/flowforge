@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import ReactFlow, { Background, Controls, MarkerType } from 'reactflow'
 import 'reactflow/dist/style.css'
 import axios from 'axios'
@@ -13,6 +13,8 @@ const STATUS_COLORS = {
   completed: { bg: '#14532d', border: '#16a34a', text: '#4ade80' },
   failed:    { bg: '#450a0a', border: '#dc2626', text: '#f87171' },
 }
+
+const STATUS_ICON = { pending: '○', running: '●', retrying: '↺', completed: '✓', failed: '✗' }
 
 function nodeStyle(status) {
   const c = STATUS_COLORS[status] || STATUS_COLORS.pending
@@ -29,54 +31,82 @@ function nodeStyle(status) {
   }
 }
 
-const STATUS_ICON = { pending: '○', running: '●', retrying: '↺', completed: '✓', failed: '✗' }
-
 export default function ExecutionView({ execution, workflow, onBack }) {
-  const [exec, setExec] = useState(execution)
+  // single source of truth: map of stepId → stepExecution
+  const [stepMap, setStepMap] = useState({})
+  const [execStatus, setExecStatus] = useState(execution.status)
   const [logs, setLogs] = useState([])
-  const [nodes, setNodes] = useState([])
-  const [edges, setEdges] = useState([])
-  const wsRef = useRef(null)
+  const [aiAnalysis, setAiAnalysis] = useState(null)
+  const [aiLoading, setAiLoading] = useState(false)
   const logRef = useRef(null)
 
-  // build initial graph from workflow steps
-  useEffect(() => {
-    if (!workflow?.steps) return
-    const stepStatusMap = {}
-    ;(exec.steps || []).forEach(se => { stepStatusMap[se.step_id] = se.status })
+  async function analyzeFailure(se) {
+    setAiLoading(true)
+    setAiAnalysis(null)
+    try {
+      const res = await axios.post(`${API}/ai/analyze-failure`, {
+        step_name: se.step_name,
+        log: se.log,
+      })
+      setAiAnalysis({ step: se.step_name, ...res.data })
+    } catch (e) {
+      setAiAnalysis({ step: se.step_name, reason: 'AI unavailable', suggestion: e.message })
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
-    const n = (workflow.steps || []).map((s, i) => ({
-      id: s.id,
-      data: { label: `${STATUS_ICON[stepStatusMap[s.id] || 'pending']} ${s.name}` },
-      position: { x: s.position_x || 100 + i * 200, y: s.position_y || 150 },
-      style: nodeStyle(stepStatusMap[s.id] || 'pending'),
-    }))
-
+  // build edges once (they never change)
+  const edges = useMemo(() => {
+    if (!workflow?.steps) return []
     const idMap = {}
     workflow.steps.forEach(s => { idMap[s.name] = s.id })
-
-    const e = []
+    const result = []
     workflow.steps.forEach(s => {
       ;(s.depends_on || []).forEach(dep => {
         const sourceId = idMap[dep] || dep
-        e.push({
+        result.push({
           id: `e-${sourceId}-${s.id}`,
           source: sourceId,
           target: s.id,
           markerEnd: { type: MarkerType.ArrowClosed, color: '#7c3aed' },
           style: { stroke: '#7c3aed', strokeWidth: 2 },
+          animated: true,
         })
       })
     })
+    return result
+  }, [workflow])
 
-    setNodes(n)
-    setEdges(e)
-  }, [workflow, exec.steps])
+  // build nodes from stepMap every time stepMap changes
+  const nodes = useMemo(() => {
+    if (!workflow?.steps) return []
+    return workflow.steps.map((s, i) => {
+      const se = stepMap[s.id]
+      const status = se?.status || 'pending'
+      const icon = STATUS_ICON[status]
+      return {
+        id: s.id,
+        data: { label: `${icon} ${s.name}` },
+        position: { x: s.position_x || 100 + i * 200, y: s.position_y || 150 },
+        style: nodeStyle(status),
+      }
+    })
+  }, [workflow, stepMap])
 
-  // connect WebSocket for live updates
+  // fetch initial execution state
   useEffect(() => {
-    const ws = new WebSocket(`${WS_URL}/executions/${exec.id}/ws`)
-    wsRef.current = ws
+    axios.get(`${API}/executions/${execution.id}`).then(r => {
+      const map = {}
+      ;(r.data.steps || []).forEach(se => { map[se.step_id] = se })
+      setStepMap(map)
+      setExecStatus(r.data.status)
+    })
+  }, [execution.id])
+
+  // WebSocket for live updates
+  useEffect(() => {
+    const ws = new WebSocket(`${WS_URL}/executions/${execution.id}/ws`)
 
     ws.onmessage = (msg) => {
       const event = JSON.parse(msg.data)
@@ -85,18 +115,7 @@ export default function ExecutionView({ execution, workflow, onBack }) {
         const se = event.step_exec
         const icon = STATUS_ICON[se.status] || '○'
 
-        setNodes(prev => prev.map(n =>
-          n.id === se.step_id
-            ? { ...n, data: { label: `${icon} ${se.step_name}` }, style: nodeStyle(se.status) }
-            : n
-        ))
-
-        setExec(prev => ({
-          ...prev,
-          steps: prev.steps
-            ? prev.steps.map(s => s.step_id === se.step_id ? se : s)
-            : [se],
-        }))
+        setStepMap(prev => ({ ...prev, [se.step_id]: se }))
 
         setLogs(prev => [...prev, {
           time: new Date().toLocaleTimeString(),
@@ -106,77 +125,120 @@ export default function ExecutionView({ execution, workflow, onBack }) {
       }
 
       if (event.type === 'execution_finished' && event.execution) {
-        setExec(prev => ({ ...prev, status: event.execution.status }))
+        setExecStatus(event.execution.status)
+        const icon = event.execution.status === 'completed' ? '🎉' : '❌'
         setLogs(prev => [...prev, {
           time: new Date().toLocaleTimeString(),
-          text: `Workflow ${event.execution.status === 'completed' ? '🎉 completed!' : '❌ failed'}`,
+          text: `${icon} Workflow ${event.execution.status}!`,
           status: event.execution.status,
         }])
       }
     }
 
     return () => ws.close()
-  }, [exec.id])
+  }, [execution.id])
 
   // auto-scroll logs
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [logs])
 
-  // fetch full execution state on mount
-  useEffect(() => {
-    axios.get(`${API}/executions/${exec.id}`).then(r => setExec(r.data))
-  }, [])
-
-  const statusColor = STATUS_COLORS[exec.status] || STATUS_COLORS.pending
+  const statusColor = STATUS_COLORS[execStatus] || STATUS_COLORS.pending
+  const stepList = Object.values(stepMap)
 
   return (
     <div>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button className="btn-secondary" onClick={onBack}>← Back</button>
-          <h1 className="page-title">Live Execution</h1>
+          <h1 className="page-title">Live Execution — {workflow?.name}</h1>
         </div>
-        <div className="execution-status" style={{ margin: 0, padding: '8px 16px' }}>
-          {exec.status === 'running' && <span className="spinner" />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', background: '#0f1117', borderRadius: 8 }}>
+          {execStatus === 'running' && <span className="spinner" />}
           <span className="badge" style={{ background: statusColor.bg, color: statusColor.text }}>
-            {exec.status.toUpperCase()}
+            {execStatus.toUpperCase()}
           </span>
-          <span style={{ fontSize: 12, color: '#64748b' }}>ID: {exec.id?.slice(0, 8)}...</span>
+          <span style={{ fontSize: 12, color: '#64748b' }}>ID: {execution.id?.slice(0, 8)}...</span>
         </div>
       </div>
 
       <div className="execution-layout">
+        {/* Live DAG — nodes change color as steps run */}
         <div className="dag-view">
-          <ReactFlow nodes={nodes} edges={edges} fitView nodesDraggable={false} nodesConnectable={false}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            fitView
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+          >
             <Background color="#2d3748" gap={20} />
             <Controls />
           </ReactFlow>
         </div>
 
         <div className="log-panel">
-          <h3>Live Logs</h3>
-
-          <div className="step-executions">
-            {(exec.steps || []).map(se => (
-              <div key={se.id} className="step-exec-item">
-                <div>
-                  <div className="step-exec-name">{se.step_name}</div>
-                  {se.retries > 0 && <div className="step-exec-meta">Retries: {se.retries}/3</div>}
-                </div>
-                <span className={`badge badge-${se.status}`}>
-                  {se.status === 'running' && <span className="spinner" style={{ marginRight: 4 }} />}
-                  {se.status}
-                </span>
+          {/* Step status list */}
+          {stepList.length > 0 && (
+            <>
+              <h3>Steps</h3>
+              <div className="step-executions">
+                {stepList.map(se => (
+                  <div key={se.id} className="step-exec-item">
+                    <div>
+                      <div className="step-exec-name">{se.step_name}</div>
+                      {se.retries > 0 && (
+                        <div className="step-exec-meta">Retried {se.retries}x</div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className={`badge badge-${se.status}`}>
+                        {se.status === 'running' && <span className="spinner" style={{ marginRight: 4 }} />}
+                        {STATUS_ICON[se.status]} {se.status}
+                      </span>
+                      {se.status === 'failed' && (
+                        <button
+                          onClick={() => analyzeFailure(se)}
+                          style={{ background: '#4c1d95', border: 'none', borderRadius: 4, color: '#a78bfa', fontSize: 11, padding: '3px 7px', cursor: 'pointer' }}
+                        >
+                          🤖 Why?
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          <h3>Events</h3>
+              {/* AI Failure Analysis Result */}
+              {(aiLoading || aiAnalysis) && (
+                <div style={{ background: '#1e1b4b', border: '1px solid #4c1d95', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 8 }}>
+                    🤖 AI Analysis — {aiAnalysis?.step}
+                  </div>
+                  {aiLoading ? (
+                    <div style={{ color: '#64748b', fontSize: 12 }}>Analyzing failure...</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 12, color: '#e2e8f0', marginBottom: 6 }}>
+                        <span style={{ color: '#f87171' }}>❌ Reason: </span>{aiAnalysis.reason}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#e2e8f0' }}>
+                        <span style={{ color: '#4ade80' }}>✅ Fix: </span>{aiAnalysis.suggestion}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Live event log */}
+          <h3>Live Events</h3>
           <div className="log-list" ref={logRef}>
             {logs.length === 0 ? (
               <div style={{ color: '#475569', fontSize: 13, textAlign: 'center', marginTop: 20 }}>
-                Waiting for events...
+                {execStatus === 'running' ? 'Waiting for events...' : 'No events yet — run the workflow!'}
               </div>
             ) : (
               logs.map((l, i) => (
